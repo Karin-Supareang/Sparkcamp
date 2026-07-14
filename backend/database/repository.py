@@ -1,6 +1,6 @@
 from sqlalchemy import func, case
 from sqlalchemy.orm import Session
-from database.models import Lecture, Quiz, Question, StudentResponse, AnalysisResult
+from database.models import AnalysisResult, Lecture, Quiz, Question, StudentResponse
 import json
 
 # ==========================================
@@ -9,14 +9,10 @@ import json
 
 def get_quiz_aggregated_data(db: Session, quiz_id: int) -> dict:
     """
-    ฟังก์ชันมหาเวทย์สำหรับย่อยข้อมูลดิบจาก MySQL 
-    มันจะทำการกรุ๊ปรวมผลลัพธ์ของนักศึกษาทุกคนในควิซนั้นๆ ออกมาเป็นสถิติสรุป
-    เพื่อให้นายพร้อมเอาไปยิงเข้า JamAI (Agent 2) ได้ทันที
+    ฟังก์ชันมหาเวทย์สำหรับย่อยข้อมูลดิบจาก MySQL ปรับปรุงเวอร์ชันส่งให้ AI วิเคราะห์
+    ส่งทั้ง: 1. ภาพรวมสถิติ, 2. โจทย์+ชอยส์+เฉลย, 3. ตารางคำตอบแบบละเอียดรายคน
     """
-    
-    # 1. ดึงข้อมูลสถิติภาพรวมของคลาส (Class Summary)
-    # หาจำนวนคนทำ, คะแนนเฉลี่ย, คะแนนสูงสุด, คะแนนต่ำสุด
-    # (คิดคะแนนโดยนับจำนวนข้อที่ student_responses.is_correct = 1 แยกตามรายคนก่อน แล้วหาค่าทางสถิติ)
+    # --- 1. ดึงข้อมูลสถิติภาพรวมคลาส (Class Summary) ---
     student_scores_subquery = (
         db.query(
             StudentResponse.student_id,
@@ -34,18 +30,17 @@ def get_quiz_aggregated_data(db: Session, quiz_id: int) -> dict:
         func.min(student_scores_subquery.c.total_score).label("min_score")
     ).first()
 
-    # ถ้ายังไม่มีเด็กเข้ามาทำควิซเลย ให้ส่งข้อมูลว่างกลับไป
     if not class_stats or class_stats.total_students == 0:
         return {"error": "No responses found for this quiz"}
 
-    # 2. ดึงข้อมูลวิเคราะห์รายข้อ (Question-by-Question Analysis)
-    # หาว่าแต่ละข้อมีหัวข้อ (Topic Tag) อะไร คนตอบถูกกี่เปอร์เซ็นต์ และชอยส์ไหนที่คนตอบผิดเยอะที่สุด
+    # --- 2. ดึงข้อสอบ, ตัวเลือก (Options), เฉลย และ Topic (Question Breakdown) ---
     questions_data = (
         db.query(
             Question.id,
             Question.question_number,
             Question.topic_tag,
             Question.question_text,
+            Question.options_json,  # 💡 ดึงตัวเลือกข้อสอบไปด้วย
             Question.correct_answer
         )
         .filter(Question.quiz_id == quiz_id)
@@ -54,21 +49,15 @@ def get_quiz_aggregated_data(db: Session, quiz_id: int) -> dict:
     )
 
     question_analysis_list = []
-    
     for q in questions_data:
-        # นับจำนวนคนตอบข้อนี้ทั้งหมด
         total_resp = db.query(func.count(StudentResponse.id)).filter(StudentResponse.question_id == q.id).scalar() or 1
-        
-        # นับจำนวนคนตอบถูก
         correct_resp = db.query(func.count(StudentResponse.id)).filter(
             StudentResponse.question_id == q.id, 
             StudentResponse.is_correct == True
         ).scalar() or 0
         
-        # คำนวณเปอร์เซ็นต์คนตอบถูก
         correct_percentage = round((correct_resp / total_resp) * 100, 2)
         
-        # หาชอยส์ที่เด็กตอบผิดบ่อยที่สุด (Most Common Wrong Answer)
         most_common_wrong = (
             db.query(StudentResponse.selected_answer)
             .filter(StudentResponse.question_id == q.id, StudentResponse.is_correct == False)
@@ -78,16 +67,53 @@ def get_quiz_aggregated_data(db: Session, quiz_id: int) -> dict:
         )
         wrong_answer_key = most_common_wrong[0] if most_common_wrong else "None"
 
+        # แปลงข้อความตัวเลือก (ถ้าเก็บเป็น string JSON) กลับเป็น python object
+        options = q.options_json
+        if isinstance(options, str):
+            try:
+                options = json.loads(options)
+            except:
+                pass
+
         question_analysis_list.append({
             "question_number": q.question_number,
             "topic_tag": q.topic_tag,
             "question_text": q.question_text,
+            "options": options,       # 💡 เพิ่มให้ AI เห็นคำตอบลวงอื่นๆ
             "correct_answer": q.correct_answer,
             "correct_percentage": correct_percentage,
             "most_common_wrong_answer": wrong_answer_key
         })
 
-    # 3. ประกอบร่างร่างชุดข้อมูลดิบที่ย่อยแล้ว (Aggregated Package Data)
+    # --- 3. 🧩 ดึงตารางคำตอบแบบละเอียดของนักศึกษาแต่ละคน (Student Response Matrix) ---
+    responses = (
+        db.query(
+            StudentResponse.student_id,
+            Question.question_number,
+            Question.topic_tag,
+            StudentResponse.selected_answer,
+            StudentResponse.is_correct
+        )
+        .join(Question, StudentResponse.question_id == Question.id)
+        .filter(StudentResponse.quiz_id == quiz_id)
+        .all()
+    )
+
+    student_matrix = {}
+    for r in responses:
+        if r.student_id not in student_matrix:
+            student_matrix[r.student_id] = {
+                "student_id": r.student_id,
+                "responses": []
+            }
+        student_matrix[r.student_id]["responses"].append({
+            "question_number": r.question_number,
+            "topic_tag": r.topic_tag,
+            "submitted_answer": r.selected_answer,
+            "is_correct": r.is_correct
+        })
+
+    # --- 4. ประกอบร่างแพคเกจข้อมูลดิบยักษ์ใหญ่ส่งให้ AI ---
     aggregated_package = {
         "quiz_id": quiz_id,
         "class_summary": {
@@ -96,13 +122,21 @@ def get_quiz_aggregated_data(db: Session, quiz_id: int) -> dict:
             "max_score": class_stats.max_score or 0,
             "min_score": class_stats.min_score or 0
         },
-        "question_breakdown": question_analysis_list
+        "test_suite": question_analysis_list,  # ชุดข้อสอบพร้อมเฉลยและสถิติรายข้อ
+        "student_responses_matrix": list(student_matrix.values())  # ตารางคำตอบนศ. รายคน
     }
     
     return aggregated_package
 
+def get_detailed_quiz_response_matrix(db: Session, quiz_id: int):
+    # ดึงข้อมูลการตอบกลับของนักเรียนทั้งหมดในควิซนี้
+    responses = db.query(StudentResponse).filter(StudentResponse.quiz_id == quiz_id).all()
+    
+    # หรือดึงข้อมูลแบบ Join เพื่อเอาโจทย์ไปด้วย
+    # (ขึ้นอยู่กับว่า AI ของนายต้องการโครงสร้างข้อมูลแบบไหน)
+    return responses
 
-def save_analysis_result(db: Session, quiz_id: int, summary_json_data: dict) -> AnalysisResult:
+def save_analysis_result(db: Session, quiz_id: int, summary_json_data: dict) -> "AnalysisResult":
     """
     บันทึกผลลัพธ์ JSON ที่ได้มาจาก JamAI ลงตาราง analysis_results
     หากเคยบันทึกไปแล้ว จะทำการอัปเดตข้อมูลให้ล่าสุด (Upsert)
