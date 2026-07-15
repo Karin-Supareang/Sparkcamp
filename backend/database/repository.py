@@ -215,3 +215,31 @@ def close_quiz_session(db: Session, quiz_id: int):
         quiz.is_closed = True
         db.commit()
     return quiz
+
+
+# ==========================================
+# 📖 SECTION 3: Read helpers for the API layer
+# ==========================================
+
+def get_lecture_by_id(db: Session, lecture_id: int) -> Lecture | None:
+    return db.query(Lecture).filter(Lecture.id == lecture_id).first()
+
+def get_quiz_by_id(db: Session, quiz_id: int) -> Quiz | None:
+    return db.query(Quiz).filter(Quiz.id == quiz_id).first()
+
+def get_quiz_by_code(db: Session, quiz_code: str) -> Quiz | None:
+    return db.query(Quiz).filter(Quiz.quiz_code == quiz_code).first()
+
+def get_questions_by_quiz(db: Session, quiz_id: int) -> list[Question]:
+    return (
+        db.query(Question)
+        .filter(Question.quiz_id == quiz_id)
+        .order_by(Question.question_number.asc())
+        .all()
+    )
+
+def get_question_by_id(db: Session, question_id: int) -> Question | None:
+    return db.query(Question).filter(Question.id == question_id).first()
+
+def get_analysis_result(db: Session, quiz_id: int) -> AnalysisResult | None:
+    return db.query(AnalysisResult).filter(AnalysisResult.quiz_id == quiz_id).first()
