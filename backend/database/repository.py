@@ -274,3 +274,14 @@ def get_question_by_id(db: Session, question_id: int) -> Question | None:
 
 def get_analysis_result(db: Session, quiz_id: int) -> AIAnalysisReport | None:
     return db.query(AIAnalysisReport).filter(AIAnalysisReport.quiz_id == quiz_id).first()
+def get_latest_analysis_report(db: Session, quiz_id: int) -> AIAnalysisReport | None:
+    """
+    คิวลี่ดึงรายงานสรุปผลการวิเคราะห์ล่าสุดตาม quiz_id 
+    โดยสั่งเรียงลำดับตามเวลาวิเคราะห์ (analyzed_at) ล่าสุด เพื่อความแม่นยำสูงสุด
+    """
+    return (
+        db.query(AIAnalysisReport)
+        .filter(AIAnalysisReport.quiz_id == quiz_id)
+        .order_by(AIAnalysisReport.analyzed_at.desc())  # ดึงแถวล่าสุดที่ยิงมาจาก JamAI 
+        .first()
+    )
