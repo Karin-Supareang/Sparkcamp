@@ -99,5 +99,7 @@ class SavedAnalysisOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     quiz_id: int
-    summary_json: dict
+    overall_summary: str
+    critical_review: str
+    mastery_achieved: str
     analyzed_at: datetime | None

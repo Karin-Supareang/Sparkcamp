@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, TIMESTAMP, JSON
+from sqlalchemy import Column, Integer, String, Text, Boolean, ForeignKey, TIMESTAMP, JSON, DateTime
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from config.database import Base
@@ -27,7 +27,7 @@ class Quiz(Base):
     lecture = relationship("Lecture", back_populates="quizzes")
     questions = relationship("Question", back_populates="quiz", cascade="all, delete-orphan")
     responses = relationship("StudentResponse", back_populates="quiz", cascade="all, delete-orphan")
-    analysis = relationship("AnalysisResult", back_populates="quiz", uselist=False, cascade="all, delete-orphan")
+    analysis = relationship("AIAnalysisReport", back_populates="quiz", uselist=False, cascade="all, delete-orphan")
 
 class Question(Base):
     __tablename__ = "questions"
@@ -57,11 +57,26 @@ class StudentResponse(Base):
     quiz = relationship("Quiz", back_populates="responses")
     question = relationship("Question", back_populates="responses")
 
-class AnalysisResult(Base):
-    __tablename__ = "analysis_results"
+class AIAnalysisReport(Base):
+    __tablename__ = "ai_analysis_reports"
 
+    # ใช้ quiz_id เป็นทั้ง Primary Key และ Foreign Key ผูกกับตาราง quizzes ไปเลย (1 ควิซ มี 1 ผลวิเคราะห์)
     quiz_id = Column(Integer, ForeignKey("quizzes.id", ondelete="CASCADE"), primary_key=True)
-    summary_json = Column(JSON, nullable=False)
-    analyzed_at = Column(TIMESTAMP, server_default=func.now(), onupdate=func.now())
+    
+    # 3 คอลัมน์ใหม่ที่ดึงแยกมาจาก 3 คอลัมน์ของ JamAI ตรงตามหน้า Web UI เป๊ะๆ
+    overall_summary = Column(Text, nullable=False)   # กล่องสีเหลือง
+    critical_review = Column(Text, nullable=False)    # กล่องสีแดง
+    mastery_achieved = Column(Text, nullable=False)   # กล่องสีเขียว
+    
+    analyzed_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     quiz = relationship("Quiz", back_populates="analysis")
+
+    def to_dict(self):
+        return {
+            "quiz_id": self.quiz_id,
+            "overall_summary": self.overall_summary,
+            "critical_review": self.critical_review,
+            "mastery_achieved": self.mastery_achieved,
+            "analyzed_at": self.analyzed_at.isoformat() if self.analyzed_at else None
+        }

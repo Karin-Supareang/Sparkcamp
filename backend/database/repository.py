@@ -1,6 +1,6 @@
 from sqlalchemy import func, case
 from sqlalchemy.orm import Session
-from database.models import AnalysisResult, Lecture, Quiz, Question, StudentResponse
+from database.models import Lecture, Quiz, Question, StudentResponse, AIAnalysisReport
 import json
 
 # ==========================================
@@ -136,22 +136,53 @@ def get_detailed_quiz_response_matrix(db: Session, quiz_id: int):
     # (ขึ้นอยู่กับว่า AI ของนายต้องการโครงสร้างข้อมูลแบบไหน)
     return responses
 
-def save_analysis_result(db: Session, quiz_id: int, summary_json_data: dict) -> "AnalysisResult":
+
+def save_ai_analysis_report(db: Session, quiz_id: int, jamai_data: dict) -> AIAnalysisReport:
     """
-    บันทึกผลลัพธ์ JSON ที่ได้มาจาก JamAI ลงตาราง analysis_results
-    หากเคยบันทึกไปแล้ว จะทำการอัปเดตข้อมูลให้ล่าสุด (Upsert)
+    ฟังก์ชันสำหรับรับ Data JSON ที่ได้มาจาก JamAI แล้วแตกแยกฟิลด์ลงตารางใหม่
+    jamai_data คาดหวัง Format: 
+    {
+       "overall_summary": "...", 
+       "critical_review": "...", 
+       "mastery_achieved": "..."
+    }
     """
-    db_result = db.query(AnalysisResult).filter(AnalysisResult.quiz_id == quiz_id).first()
+    # ตรวจสอบก่อนว่าเคยมีผลวิเคราะห์ของควิซนี้บันทึกอยู่แล้วหรือไม่
+    db_report = db.query(AIAnalysisReport).filter(AIAnalysisReport.quiz_id == quiz_id).first()
     
-    if db_result:
-        db_result.summary_json = summary_json_data
+    if db_report:
+        # ถ้ามีอยู่แล้วให้ทำการอัปเดตข้อมูล (Update)
+        db_report.overall_summary = jamai_data.get("overall_summary", db_report.overall_summary)
+        db_report.critical_review = jamai_data.get("critical_review", db_report.critical_review)
+        db_report.mastery_achieved = jamai_data.get("mastery_achieved", db_report.mastery_achieved)
     else:
-        db_result = AnalysisResult(quiz_id=quiz_id, summary_json=summary_json_data)
-        db_prefix = db.add(db_result)
+        # ถ้ายังไม่มีให้สร้างแถวข้อมูลใหม่ (Insert)
+        db_report = AIAnalysisReport(
+            quiz_id=quiz_id,
+            overall_summary=jamai_data.get("overall_summary", ""),
+            critical_review=jamai_data.get("critical_review", ""),
+            mastery_achieved=jamai_data.get("mastery_achieved", "")
+        )
+        db.add(db_report)
         
     db.commit()
-    db.refresh(db_result)
-    return db_result
+    db.refresh(db_report)
+    return db_report
+
+
+def save_analysis_result(db: Session, quiz_id: int, analysis_text_or_data) -> AIAnalysisReport:
+    """
+    Compatibility shim for older analytics workflows that pass plain text analysis.
+    If a dict is provided, it is stored as a full AI analysis report.
+    """
+    if isinstance(analysis_text_or_data, dict):
+        return save_ai_analysis_report(db, quiz_id, analysis_text_or_data)
+
+    return save_ai_analysis_report(db, quiz_id, {
+        "overall_summary": analysis_text_or_data,
+        "critical_review": "",
+        "mastery_achieved": ""
+    })
 
 
 # ==========================================
@@ -241,5 +272,5 @@ def get_questions_by_quiz(db: Session, quiz_id: int) -> list[Question]:
 def get_question_by_id(db: Session, question_id: int) -> Question | None:
     return db.query(Question).filter(Question.id == question_id).first()
 
-def get_analysis_result(db: Session, quiz_id: int) -> AnalysisResult | None:
-    return db.query(AnalysisResult).filter(AnalysisResult.quiz_id == quiz_id).first()
+def get_analysis_result(db: Session, quiz_id: int) -> AIAnalysisReport | None:
+    return db.query(AIAnalysisReport).filter(AIAnalysisReport.quiz_id == quiz_id).first()
