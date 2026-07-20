@@ -82,68 +82,56 @@ function App() {
   const [activeLectureId, setActiveLectureId] = useState('current');
   const [activeLectureTitle, setActiveLectureTitle] = useState('Neural_Networks_Lec4.pdf');
 
-  // Mock library data
-  const pastUploads = [
-    { id: 1, title: 'Introduction to Machine Learning.pptx', date: 'Oct 12, 2026' },
-    { id: 2, title: 'Linear Regression Basics.pdf', date: 'Oct 08, 2026' },
-    { id: 3, title: 'Gradient Descent.pdf', date: 'Oct 01, 2026' },
-  ];
+  const [analysisData, setAnalysisData] = useState(null);
+  const [loadingAnalysis, setLoadingAnalysis] = useState(false);
+  const [analysisError, setAnalysisError] = useState(null);
+  
+  const [lecturesList, setLecturesList] = useState([]);
+  const [statsData, setStatsData] = useState(null);
+  const [quizInfo, setQuizInfo] = useState(null);
 
-  // Rich Question Data for progressive disclosure drill-down
-  const questionStats = [
-    { 
-      id: 1, 
-      q: 'Q1: What is a Perceptron?', 
-      correct: 95,
-      questionText: 'Which of the following best describes a single-layer Perceptron?',
-      options: [
-        { text: 'A binary classifier that maps its real-valued inputs to a single binary output (Correct)', correct: true, pct: 95, count: 80 },
-        { text: 'A deep multi-layer neural network with convolution layers', correct: false, pct: 3, count: 2 },
-        { text: 'An unsupervised clustering algorithm', correct: false, pct: 2, count: 2 }
-      ],
-      misconception: null,
-      slideNumber: 3
-    },
-    { 
-      id: 2, 
-      q: 'Q2: Purpose of Activation Functions', 
-      correct: 88,
-      questionText: 'Why do we introduce non-linear activation functions (like ReLU or Sigmoid) into artificial neural networks?',
-      options: [
-        { text: 'To allow the network to learn non-linear decision boundaries and complex patterns (Correct)', correct: true, pct: 88, count: 74 },
-        { text: 'To speed up numerical calculation speeds exclusively', correct: false, pct: 7, count: 6 },
-        { text: 'To make the output of all layers strictly binary', correct: false, pct: 5, count: 4 }
-      ],
-      misconception: null,
-      slideNumber: 5
-    },
-    { 
-      id: 3, 
-      q: 'Q3: Backpropagation Chain Rule', 
-      correct: 42,
-      questionText: 'When calculating the gradient of the loss function with respect to a weight in a hidden layer, which derivative must be computed first using the chain rule?',
-      options: [
-        { text: 'The derivative of the loss with respect to the output of the hidden layer (Correct)', correct: true, pct: 42, count: 35 },
-        { text: 'The derivative of the activation function of the input layer', correct: false, pct: 38, count: 32 },
-        { text: 'The derivative of the bias term on the output layer', correct: false, pct: 20, count: 17 }
-      ],
-      misconception: '38% of students mistakenly believe backpropagation bypasses hidden layer gradient calculations, showing confusion on nested derivatives.',
-      slideNumber: 8
-    },
-    { 
-      id: 4, 
-      q: 'Q4: Avoiding Overfitting', 
-      correct: 75,
-      questionText: 'Which technique is commonly used to prevent overfitting in neural networks by randomly disabling neurons during training?',
-      options: [
-        { text: 'Dropout regularization (Correct)', correct: true, pct: 75, count: 63 },
-        { text: 'Stochastic Gradient Descent', correct: false, pct: 15, count: 13 },
-        { text: 'Batch Normalization', correct: false, pct: 10, count: 8 }
-      ],
-      misconception: 'Some confusion between regularizers (Dropout) and optimization/normalization methods.',
-      slideNumber: 11
-    },
-  ];
+  useEffect(() => {
+    fetch('http://localhost:21679/lectures')
+      .then(res => res.json())
+      .then(data => setLecturesList(data))
+      .catch(err => console.error("Failed to fetch lectures:", err));
+  }, []);
+
+  useEffect(() => {
+    if (uploadState === 'done') {
+      setLoadingAnalysis(true);
+      const fetchId = activeLectureId === 'current' ? 1 : activeLectureId;
+      
+      fetch(`http://localhost:21679/quizzes/${fetchId}/analysis`)
+        .then(res => {
+          if (!res.ok) throw new Error('Failed to fetch analysis');
+          return res.json();
+        })
+        .then(data => {
+          setAnalysisData(data);
+          setAnalysisError(null);
+        })
+        .catch(err => {
+          console.error(err);
+          setAnalysisError(err.message);
+        })
+        .finally(() => {
+          setLoadingAnalysis(false);
+        });
+
+      fetch(`http://localhost:21679/quizzes/${fetchId}/stats`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => setStatsData(data))
+        .catch(err => console.error(err));
+        
+      fetch(`http://localhost:21679/quizzes/${fetchId}`)
+        .then(res => res.ok ? res.json() : null)
+        .then(data => setQuizInfo(data))
+        .catch(err => console.error(err));
+    }
+  }, [uploadState, activeLectureId]);
+
+
 
   // Handle fake upload
   const handleUpload = () => {
@@ -251,12 +239,14 @@ function App() {
             <a href="#" className={`nav-item ${activeLectureId === 'current' ? 'active' : ''}`} onClick={handleCurrentUploadClick} aria-current={activeLectureId === 'current' ? 'page' : undefined} title="Current Upload">
               <FileIcon /> <span>Current Upload</span>
             </a>
-            {pastUploads.map(file => (
+            {lecturesList.map(file => (
               <a href="#" key={file.id} className={`nav-item ${activeLectureId === file.id ? 'active' : ''}`} onClick={(e) => handlePastUploadClick(file, e)} title={file.title}>
                 <FileIcon />
                 <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <div style={{ fontSize: '0.875rem', color: 'var(--color-text-primary)' }}>{file.title}</div>
-                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 400 }}>{file.date}</div>
+                  <div style={{ fontSize: '0.75rem', color: 'var(--color-text-muted)', fontWeight: 400 }}>
+                    {file.created_at ? new Date(file.created_at).toLocaleDateString() : 'Unknown Date'}
+                  </div>
                 </div>
               </a>
             ))}
@@ -382,30 +372,46 @@ function App() {
                 </div>
                 
                 <div className="ai-content-grid">
-                  <div className="ai-summary">
-                    <p style={{ color: 'var(--color-text-primary)', fontSize: '1.05rem', lineHeight: 1.6 }}>
-                      Overall, the class grasped the fundamental concepts of Neural Networks well, especially Perceptrons and Activation Functions. However, there is a significant comprehension drop-off regarding the <strong>Backpropagation Chain Rule</strong> (only 42% correct). Most incorrect answers showed confusion about calculating partial derivatives for hidden layers.
-                    </p>
-                  </div>
-                  <div className="ai-recommendations">
-                    <h4 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
-                      Recommended Interventions
-                    </h4>
-                    <ul className="recommendations-list">
-                      <li className="rec-item critical">
-                        <span className="rec-badge critical">Critical Review Needed</span>
-                        <p style={{ color: 'var(--color-text-primary)', lineHeight: 1.4 }}>
-                          Spend 5 mins at the start of next class clarifying partial derivative propagation for hidden layers (Q3).
+                  {loadingAnalysis ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-text-secondary)' }}>
+                      Loading AI analysis from backend...
+                    </div>
+                  ) : analysisError ? (
+                    <div style={{ padding: '20px', textAlign: 'center', color: 'var(--color-feedback-error)' }}>
+                      Failed to load AI Analysis. Make sure the backend is running at localhost:21679. (Error: {analysisError})
+                    </div>
+                  ) : (
+                    <>
+                      <div className="ai-summary">
+                        <p style={{ color: 'var(--color-text-primary)', fontSize: '1.05rem', lineHeight: 1.6 }}>
+                          {analysisData?.overall_summary || 'No overall summary available.'}
                         </p>
-                      </li>
-                      <li className="rec-item positive">
-                        <span className="rec-badge positive">Mastery Achieved</span>
-                        <p style={{ color: 'var(--color-text-primary)', lineHeight: 1.4 }}>
-                          95% of students understood Perceptrons (Q1). You can skip introductory reviews for this concept.
-                        </p>
-                      </li>
-                    </ul>
-                  </div>
+                      </div>
+                      <div className="ai-recommendations">
+                        <h4 style={{ fontSize: '0.875rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: 'var(--color-text-secondary)', marginBottom: '8px' }}>
+                          Recommended Interventions
+                        </h4>
+                        <ul className="recommendations-list">
+                          {analysisData?.critical_review && (
+                            <li className="rec-item critical">
+                              <span className="rec-badge critical">Critical Review Needed</span>
+                              <p style={{ color: 'var(--color-text-primary)', lineHeight: 1.4 }}>
+                                {analysisData.critical_review}
+                              </p>
+                            </li>
+                          )}
+                          {analysisData?.mastery_achieved && (
+                            <li className="rec-item positive">
+                              <span className="rec-badge positive">Mastery Achieved</span>
+                              <p style={{ color: 'var(--color-text-primary)', lineHeight: 1.4 }}>
+                                {analysisData.mastery_achieved}
+                              </p>
+                            </li>
+                          )}
+                        </ul>
+                      </div>
+                    </>
+                  )}
                 </div>
               </div>
 
@@ -414,35 +420,34 @@ function App() {
                 <h3 style={{ marginBottom: '20px' }}>Per Question Performance</h3>
                 
                 <div className="question-list">
-                  {questionStats.map((item) => {
-                    const isExpanded = expandedQuestion === item.id;
-                    const color = getScoreColor(item.correct);
+                  {statsData?.test_suite ? statsData.test_suite.map((item) => {
+                    const isExpanded = expandedQuestion === item.question_number;
+                    const color = getScoreColor(item.correct_percentage);
                     return (
                       <div 
-                        key={item.id} 
+                        key={item.question_number} 
                         className={`question-card-wrapper ${isExpanded ? 'expanded' : ''}`}
                       >
                         <div 
                           className="question-item" 
-                          onClick={() => setExpandedQuestion(isExpanded ? null : item.id)}
-                          onKeyDown={(e) => handleQuestionKeyDown(e, item.id)}
+                          onClick={() => setExpandedQuestion(isExpanded ? null : item.question_number)}
+                          onKeyDown={(e) => handleQuestionKeyDown(e, item.question_number)}
                           style={{ cursor: 'pointer' }}
                           role="button"
                           tabIndex={0}
                           aria-expanded={isExpanded}
-                          aria-controls={`q-details-${item.id}`}
+                          aria-controls={`q-details-${item.question_number}`}
                         >
                           <div style={{ flex: 1, paddingRight: '24px' }}>
                             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
-                              <span style={{ fontWeight: 600, color: 'var(--color-text-heading)' }}>{item.q}</span>
-                              <span style={{ fontSize: '0.8125rem', color: 'var(--color-text-muted)', fontWeight: 500 }}>Slide {item.slideNumber}</span>
+                              <span style={{ fontWeight: 600, color: 'var(--color-text-heading)' }}>Q{item.question_number}: {item.topic_tag}</span>
                             </div>
                             <div className="progress-bar">
                               <div 
                                 className="progress-fill" 
                                 style={{ 
                                   width: '100%',
-                                  transform: `scaleX(${item.correct / 100})`,
+                                  transform: `scaleX(${item.correct_percentage / 100})`,
                                   transformOrigin: 'left',
                                   background: color
                                 }}
@@ -457,7 +462,7 @@ function App() {
                               fontSize: '1.125rem', 
                               color: color
                             }}>
-                              {item.correct}%
+                              {item.correct_percentage}%
                             </div>
                             <span 
                               className={`expand-chevron ${isExpanded ? 'rotated' : ''}`}
@@ -468,45 +473,35 @@ function App() {
                           </div>
                         </div>
                         
-                        {/* Always rendered, grid-template-rows smooth transitions height */}
                         <div 
-                          id={`q-details-${item.id}`}
+                          id={`q-details-${item.question_number}`}
                           className="question-expanded-details"
                           aria-hidden={!isExpanded}
                         >
                           <div className="expanded-content-inner">
-                            <p className="question-text"><strong>Question Text:</strong> {item.questionText}</p>
+                            <p className="question-text"><strong>Question Text:</strong> {item.question_text}</p>
                             
                             <div className="options-breakdown">
                               <h5 className="options-title">Response Distribution</h5>
-                              {item.options.map((opt, idx) => {
-                                // Highlight incorrect option attracting >25% answers as critical distractor
-                                const isCriticalDistractor = !opt.correct && opt.pct > 25;
+                              {item.options && item.options.map((opt, idx) => {
                                 return (
                                   <div 
                                     key={idx} 
-                                    className={`option-row ${opt.correct ? 'correct' : 'incorrect'} ${isCriticalDistractor ? 'critical-distractor' : ''}`}
+                                    className={`option-row ${opt.correct ? 'correct' : 'incorrect'}`}
                                   >
                                     <span className="option-badge">
-                                      {opt.correct ? '✓' : isCriticalDistractor ? '✗ (Common Error)' : '•'}
+                                      {opt.correct ? '✓' : '•'}
                                     </span>
                                     <span className="option-label">{opt.text}</span>
-                                    <span className="option-pct">{opt.pct}% ({opt.count} students)</span>
                                   </div>
                                 );
                               })}
                             </div>
-                            
-                            {item.misconception && (
-                              <div className="misconception-callout">
-                                <strong>Misconception Callout:</strong> {item.misconception}
-                              </div>
-                            )}
                           </div>
                         </div>
                       </div>
                     );
-                  })}
+                  }) : <p style={{color: 'var(--color-text-secondary)', padding: '20px'}}>No question data available.</p>}
                 </div>
               </div>
             </div>
@@ -523,7 +518,7 @@ function App() {
                 </div>
                 <div>
                   <div style={{ fontSize: '1.25rem', fontWeight: 800, color: 'var(--color-text-heading)', fontFamily: 'monospace', letterSpacing: '-0.02em' }}>
-                    check.lec/4921
+                    check.lec/{quizInfo?.quiz_code || '....'}
                   </div>
                   <p style={{ fontSize: '0.75rem', color: 'var(--color-text-secondary)', marginTop: '4px', lineHeight: 1.3 }}>
                     Display for students to scan & answer.
@@ -540,19 +535,21 @@ function App() {
 
               <div className="card stat-card">
                 <div className="stat-label">Students Responded</div>
-                <div className="stat-value">84 <span style={{ color: 'var(--color-text-muted)', fontSize: '1.25rem', fontWeight: 500 }}>/ 90</span></div>
-                <div className="stat-trend trend-up"><TrendingUpIcon /> 93% Participation</div>
+                <div className="stat-value">{statsData?.class_summary?.total_students_submitted || 0}</div>
               </div>
               
               <div className="card stat-card">
-                <div className="stat-label">Avg. Comprehension</div>
-                <div className="stat-value" style={{ color: 'var(--color-feedback-warning)' }}>75%</div>
-                <div className="stat-trend trend-up"><TrendingUpIcon /> +4% from last week</div>
+                <div className="stat-label">Avg. Score</div>
+                <div className="stat-value" style={{ color: 'var(--color-feedback-warning)' }}>
+                  {statsData?.class_summary?.average_score && statsData?.test_suite?.length
+                    ? (statsData.class_summary.average_score / statsData.test_suite.length * 100).toFixed(0) + '%'
+                    : '0%'}
+                </div>
               </div>
 
               <div className="card stat-card">
                 <div className="stat-label">Completion Rate</div>
-                <div className="stat-value">98%</div>
+                <div className="stat-value">{(statsData?.class_summary?.total_students_submitted > 0 ? 98 : 0)}%</div>
                 <div className="stat-trend" style={{ color: 'var(--color-text-muted)' }}>Almost everyone finished</div>
               </div>
             </div>
@@ -624,7 +621,7 @@ function App() {
 
           <div style={{ textAlign: 'center', marginTop: '16px' }}>
             <div style={{ fontSize: '3rem', fontWeight: 900, fontFamily: 'monospace', letterSpacing: '-0.02em', color: 'var(--color-action-primary)' }}>
-              check.lec/4921
+              check.lec/{quizInfo?.quiz_code || '....'}
             </div>
             <p style={{ color: 'var(--color-text-muted)', fontSize: '1rem', marginTop: '12px' }}>
               Scan the QR code or go to the link above on your phone to join.
