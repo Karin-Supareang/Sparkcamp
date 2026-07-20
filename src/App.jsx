@@ -78,6 +78,9 @@ function App() {
   const [expandedQuestion, setExpandedQuestion] = useState(null);
   const [isTheaterMode, setIsTheaterMode] = useState(false);
   const [copiedLink, setCopiedLink] = useState(false);
+  
+  const [activeLectureId, setActiveLectureId] = useState('current');
+  const [activeLectureTitle, setActiveLectureTitle] = useState('Neural_Networks_Lec4.pdf');
 
   // Mock library data
   const pastUploads = [
@@ -181,6 +184,21 @@ function App() {
     setTimeout(() => setCopiedLink(false), 2000);
   };
 
+  const handlePastUploadClick = (file, e) => {
+    e.preventDefault();
+    setActiveLectureId(file.id);
+    setActiveLectureTitle(file.title);
+    setUploadState('done');
+    if (isSidebarOpen) setIsSidebarOpen(false);
+  };
+
+  const handleCurrentUploadClick = (e) => {
+    e.preventDefault();
+    setActiveLectureId('current');
+    setActiveLectureTitle('Neural_Networks_Lec4.pdf');
+    if (isSidebarOpen) setIsSidebarOpen(false);
+  };
+
   // Helper to determine semantic colors for score ranges
   const getScoreColor = (correct) => {
     if (correct >= 80) return 'var(--color-feedback-success)';
@@ -208,7 +226,7 @@ function App() {
           <CloseIcon />
         </button>
 
-        <div style={{ display: 'flex', alignItems: 'center', width: '100%', position: 'relative' }}>
+        <div style={{ display: 'flex', alignItems: 'center', width: '100%' }}>
           <div className="brand">
             <div className="brand-icon">✓</div>
             <span className="brand-text">LectureCheck</span>
@@ -230,11 +248,11 @@ function App() {
             Library
           </h4>
           <nav className="nav-menu">
-            <a href="#" className="nav-item active" aria-current="page" title="Current Upload">
+            <a href="#" className={`nav-item ${activeLectureId === 'current' ? 'active' : ''}`} onClick={handleCurrentUploadClick} aria-current={activeLectureId === 'current' ? 'page' : undefined} title="Current Upload">
               <FileIcon /> <span>Current Upload</span>
             </a>
             {pastUploads.map(file => (
-              <a href="#" key={file.id} className="nav-item" title={file.title}>
+              <a href="#" key={file.id} className={`nav-item ${activeLectureId === file.id ? 'active' : ''}`} onClick={(e) => handlePastUploadClick(file, e)} title={file.title}>
                 <FileIcon />
                 <div style={{ overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
                   <div style={{ fontSize: '0.875rem', color: 'var(--color-text-primary)' }}>{file.title}</div>
@@ -330,7 +348,7 @@ function App() {
                   Active Lecture
                 </span>
                 <strong style={{ fontSize: '1.05rem', color: 'var(--color-text-heading)', fontWeight: 600 }}>
-                  Neural_Networks_Lec4.pdf
+                  {activeLectureTitle}
                 </strong>
               </div>
             </div>
@@ -339,6 +357,8 @@ function App() {
               onClick={() => {
                 if (window.confirm("Are you sure you want to upload new slides? This will clear all currently active student response data.")) {
                   setUploadState('idle');
+                  setActiveLectureId('current');
+                  setActiveLectureTitle('Neural_Networks_Lec4.pdf');
                 }
               }}
             >

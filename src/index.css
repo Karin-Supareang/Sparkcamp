@@ -119,14 +119,13 @@ h4 { font-size: 1rem; font-weight: 600; }
   position: sticky;
   top: 0;
   height: 100vh;
-  overflow: hidden;
   transition: width var(--duration-normal) var(--ease-out), padding var(--duration-normal) var(--ease-out);
 }
 
 /* Collapse Toggle Button (Extruding Tab) */
 .collapse-toggle {
   position: absolute;
-  top: 28px;
+  top: 44px; /* Slightly lowered */
   right: -12px; /* Floats half-way over the 1px sidebar border */
   z-index: 101;
   background: var(--color-bg-primary);
